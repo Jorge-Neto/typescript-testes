@@ -5,6 +5,11 @@
         PUSH_NOTIFICATION = 'PUSH_NOTIFICATION',
     }
 
+    enum Mode {
+        TODO = 'TODO',
+        REMINDER = 'REMINDER',
+    }
+
     const DateUtils = {
         today(): Date {
             return new Date();
@@ -14,13 +19,13 @@
             tomorrow.setDate(tomorrow.getDate() + 1);
             return tomorrow
         },
-        formDate(date: Date): string {
-            return `${date.getDate()}.${date.getMonth()}.${date.getFullYear()}`
+        formatDate(date: Date): string {
+            return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`
         },
     };
 
     const UUID = (): string => {
-        return Math.random.toString().substring(2, 9);
+        return Math.random().toString(36).substr(2, 9);
     };
 
     interface Task {
@@ -37,20 +42,21 @@
         dateUpdated: Date = DateUtils.today();
         description: string = '';
 
-        date: Date = DateUtils.tomorrow();
+        scheduleDate: Date = DateUtils.tomorrow();
         notifications: Array<NotificationPlatform> = [NotificationPlatform.EMAIL];
 
-        constructor(description: string, date: Date, notifications: Array<NotificationPlatform>) {
+        constructor(description: string, scheduleDate: Date, notifications: Array<NotificationPlatform>) {
             this.description = description;
-            this.date = date;
+            this.scheduleDate = scheduleDate;
             this.notifications = notifications;
         }
 
         render(): string {
             return `
-            description: ${this.description}
-            date: ${DateUtils.formDate(this.date)}
-            platform: ${this.notifications.join(',')}
+            Description: ${this.description}
+            Notify by ${this.notifications.join(" and ")} in ${DateUtils.formatDate(this.scheduleDate)}
+            Created: ${DateUtils.formatDate(this.dateCreated)}
+            Last Update: ${DateUtils.formatDate(this.dateUpdated)}
             `;
         }
     }
@@ -68,19 +74,35 @@
         }
 
         render(): string {
+            const doneLabel = this.done ? "Completed" : "In Progress";
             return `
-            description: ${this.description},
-            done: ${this.done},
+            Description: ${this.description}
+            Status: ${doneLabel}
+            Created: ${DateUtils.formatDate(this.dateCreated)}
+            Last Update: ${DateUtils.formatDate(this.dateUpdated)}
             `;
         }
     }
 
-    const todo = new Todo("Class Todo");
-    const reminder = new Reminder("Class Reminder", new Date(), [NotificationPlatform.EMAIL]);
-
     const taskView = {
-        render(tasks: Array<Task>) {
+        getTodo(form: HTMLFormElement): Todo {
+            const todoDescription = form.todoDescription.value;
+            form.reset();
+            return new Todo(todoDescription);
+        },
+        getReminder(form: HTMLFormElement): Reminder {
+            const reminderNotifications = [
+                form.notification.value as NotificationPlatform,
+            ]
+            const reminderDate = new Date(form.scheduleDate.value);
+            const reminderDescription = form.reminderDescription.value;
+            form.reset();
+            return new Reminder(reminderDescription, reminderDate, reminderNotifications);
+        },
+        render(tasks: Array<Task>, mode: Mode) {
             const tasksList = document.getElementById('tasksList');
+            const reminderSet = document.getElementById('reminderSet');
+            const todoSet = document.getElementById('todoSet');
 
             while (tasksList?.firstChild) {
                 tasksList.removeChild(tasksList.firstChild);
@@ -90,22 +112,56 @@
                 const li = document.createElement('LI');
                 const textNode = document.createTextNode(task.render());
                 li.appendChild(textNode);
-
                 tasksList?.appendChild(li);
             })
+
+            if (mode === Mode.TODO) {
+                todoSet?.setAttribute('style', 'display: block');
+                todoSet?.removeAttribute('disabled');
+                reminderSet?.setAttribute('style', 'display: none');
+                reminderSet?.setAttribute('disabled', 'true');
+            } else {
+                reminderSet?.setAttribute('style', 'display: block');
+                reminderSet?.removeAttribute('disabled');
+                todoSet?.setAttribute('style', 'display: none');
+                todoSet?.setAttribute('disabled', 'true');
+            }
 
         }
     };
 
     const TaskController = (view: typeof taskView) => {
-        const tasks: Array<Task> = [todo, reminder];
+        const tasks: Array<Task> = [];
+        let mode: Mode = Mode.TODO;
 
-        const handleEvent = (event: Event) => {
+        const handleTaskCreate = (event: Event) => {
             event.preventDefault();
-            view.render(tasks);
+            const form = event.target as HTMLFormElement;
+            switch (mode as Mode) {
+                case Mode.TODO:
+                    tasks.push(view.getTodo(form));
+                    break;
+                case Mode.REMINDER:
+                    tasks.push(view.getReminder(form));
+                    break;
+            }
+            view.render(tasks, mode);
+        }
+        const handleModeToggle = () => {
+            switch (mode as Mode) {
+                case Mode.TODO:
+                    mode = Mode.REMINDER
+                    break;
+                case Mode.REMINDER:
+                    mode = Mode.TODO
+                    break;
+
+            }
+            view.render(tasks, mode);
         }
 
-        document.getElementById('taskForm')?.addEventListener('submit', handleEvent);
+        document.getElementById('toggleMode')?.addEventListener('click', handleModeToggle);
+        document.getElementById('taskForm')?.addEventListener('submit', handleTaskCreate);
     }
 
     TaskController(taskView);
